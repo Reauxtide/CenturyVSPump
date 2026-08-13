@@ -145,49 +145,7 @@ namespace esphome
 
     response->on_data_func_(this, data);
 }
-void CenturyVSPump::process_modbus_data_(const CenturyPumpCommand *response)
-        {
-            // Ensure function matches ...
-            if (response->payload_[0] != response->function_)
-            {
-                ESP_LOGW(TAG, "Payload data function mismatch (%X != %X), ignoring", response->payload_[0], response->function_);
-                return;
-            }
 
-            // Ensure ACK was OK
-            if (response->payload_[1] != 0x10)
-            {
-                ESP_LOGW(TAG, "Function %X NACK with %X, ignoring", response->function_, response->payload_[0]);
-                return;
-            }
-
-            // Pass to handler function
-            std::vector<uint8_t> data(response->payload_.begin() + 2, response->payload_.end());
-            response->on_data_func_(this, data);
-        }
-
-        /////////////////////////////////////////////////////////////////////////////////////////////
-        bool CenturyVSPump::send_next_command_()
-        {
-            uint32_t last_send = millis() - this->last_command_timestamp_;
-            if ((last_send > this->command_throttle_) && !waiting_for_response() && !command_queue_.empty())
-            {
-                auto &command = command_queue_.front();
-
-                if (command->send_countdown < 1)
-                {
-                    ESP_LOGD(TAG, "Pump command %02X no response received - removed from send queue", command->function_);
-                    command_queue_.pop_front();
-                }
-                else
-                {
-                    ESP_LOGV(TAG, "Sending command with function %02X", command->function_);
-                    command->send();
-                    this->last_command_timestamp_ = millis();
-                }
-            }
-            return true;
-        }
 
         /////////////////////////////////////////////////////////////////////////////////////////////
         bool CenturyPumpCommand::send()
