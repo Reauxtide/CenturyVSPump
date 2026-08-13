@@ -107,6 +107,45 @@ namespace esphome
 
         /////////////////////////////////////////////////////////////////////////////////////////////
         void CenturyVSPump::process_modbus_data_(const CenturyPumpCommand *response)
+    {
+    if (response == nullptr)
+    {
+        ESP_LOGW(TAG, "Null response received");
+        return;
+    }
+
+    if (response->payload_.empty())
+    {
+        ESP_LOGW(
+            TAG,
+            "Empty payload for function %02X",
+            response->function_);
+        return;
+    }
+
+    // ESPHome 2026.7 passes the payload after the function code.
+    // The first payload byte is therefore the pump ACK.
+    const uint8_t ack = response->payload_[0];
+
+    if (ack != 0x10)
+    {
+        ESP_LOGW(
+            TAG,
+            "Function %02X NACK with %02X, ignoring",
+            response->function_,
+            ack);
+        return;
+    }
+
+    // Remove the ACK and give the remaining bytes to the
+    // command-specific response handler.
+    std::vector<uint8_t> data(
+        response->payload_.begin() + 1,
+        response->payload_.end());
+
+    response->on_data_func_(this, data);
+}
+void CenturyVSPump::process_modbus_data_(const CenturyPumpCommand *response)
         {
             // Ensure function matches ...
             if (response->payload_[0] != response->function_)
