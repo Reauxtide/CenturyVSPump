@@ -137,7 +137,7 @@ namespace esphome
         bool CenturyVSPump::send_next_command_()
         {
             uint32_t last_send = millis() - this->last_command_timestamp_;
-            if ((last_send > this->command_throttle_) && !waiting_for_response() && !command_queue_.empty())
+            if ((last_send > this->command_throttle_) && ready_for_immediate_send() && !command_queue_.empty())
             {
                 auto &command = command_queue_.front();
 
