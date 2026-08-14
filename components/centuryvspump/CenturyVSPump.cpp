@@ -108,36 +108,32 @@ namespace esphome
         /////////////////////////////////////////////////////////////////////////////////////////////
                /////////////////////////////////////////////////////////////////////////////////////////////
         void CenturyVSPump::process_modbus_data_(const CenturyPumpCommand *response)
-        {
-            if (response == nullptr)
-            
-                ESP_LOGW(TAG, "Null response received");
-               return;
-            }
+{
+    if (response == nullptr)
+    {
+        ESP_LOGW(TAG, "Null response received");
+        return;
+    }
 
-           if (response->payload_.empty()
-            {
-                ESP_LOGW(TAG, "Empty payload for function %02X", response->function_);
-               return;
-            }
+    if (response->payload_.empty())
+    {
+        ESP_LOGW(TAG, "Empty payload for function %02X", response->function_);
+        return;
+    }
 
-           // ESPHome 2026.7 removes the function code before
-            //*passing the payload to on_modbus_d*ta().
-            // The first byt* is the pump ACK.
-            const uint8_t ack = response->payload_[0];
+    // ESPHome 2026.7's modbus rewrite strips the function-code echo before
+    // calling on_modbus_data() — the first byte is now the pump ACK.
+    const uint8_t ack = response->payload_[0];
+    if (ack != 0x10)
+    {
+        ESP_LOGW(TAG, "Function %02X NACK with %02X, ignoring", response->function_, ack);
+        return;
+    }
 
-            if (ack != 0x10)
-           {
-                ESP_LOGW(TAG, "Function %02X NACK with %02X, ignoring", response->function_, ack);
-                return;
-            }
-
-            // Remove the ACK and pass the remai*ing response data
-            // t* the command-specific handler.
-           std::vector<uint8_t> data(response->payload_.begin() + 1, response->payload_.end());
-           response->on_data_func_(this, data)
-        }
-
+    // Drop the ACK byte and pass the rest to the command-specific handler.
+    std::vector<uint8_t> data(response->payload_.begin() + 1, response->payload_.end());
+    response->on_data_func_(this, data);
+}
         /////////////////////////////////////////////////////////////////////////////////////////////
         bool CenturyVSPump::send_next_command_()
         {
