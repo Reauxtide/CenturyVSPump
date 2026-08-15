@@ -172,7 +172,7 @@ namespace esphome
             std::vector<uint8_t> pdu;
             pdu.reserve(2 + this->payload_.size());
             pdu.push_back(this->function_);
-            pdu.push_back(CENTURY_REQUEST);
+            pdu.push_back(this->ack_);
             pdu.insert(pdu.end(), this->payload_.begin(), this->payload_.end());
             return pdu;
         }
