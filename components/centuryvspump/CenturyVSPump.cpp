@@ -2,6 +2,9 @@
 #include "esphome/core/application.h"
 #include "esphome/core/log.h"
 
+#include <algorithm>
+#include <memory>
+
 namespace esphome
 {
     namespace century_vs_pump
@@ -26,24 +29,6 @@ namespace esphome
         }
 
         /////////////////////////////////////////////////////////////////////////////////////////////
-        void CenturyVSPump::loop()
-        {
-            // Incoming data to process?
-            if (!response_queue_.empty())
-            {
-                auto &message = response_queue_.front();
-                if (message != nullptr)
-                    process_modbus_data_(message.get());
-                response_queue_.pop();
-            }
-            else
-            {
-                // all messages processed send pending commmands
-                send_next_command_();
-            }
-        }
-
-        /////////////////////////////////////////////////////////////////////////////////////////////
         void CenturyVSPump::update()
         {
             // Request status & pump RPM
@@ -56,34 +41,6 @@ namespace esphome
             ESP_LOGV(TAG, "Updating pump component");
             for (auto item : items_)
                 queue_command_(item->create_command());
-        }
-
-        /////////////////////////////////////////////////////////////////////////////////////////////
-        /// called when a modbus response was parsed without errors
-        void CenturyVSPump::on_modbus_data(const std::vector<uint8_t> &data)
-        {
-            ESP_LOGV(TAG, "Pump got data");
-            auto &current_command = this->command_queue_.front();
-            if (current_command != nullptr)
-            {
-                current_command->payload_ = data;
-                this->response_queue_.push(std::move(current_command));
-                ESP_LOGV(TAG, "Pump response queued");
-                command_queue_.pop_front();
-            }
-        }
-
-        /////////////////////////////////////////////////////////////////////////////////////////////
-        /// called when a modbus error response was received
-        void CenturyVSPump::on_modbus_error(uint8_t function_code, uint8_t exception_code)
-        {
-            ESP_LOGV(TAG, "Received modbus error");
-            auto &current_command = this->command_queue_.front();
-            if (current_command != nullptr)
-            {
-                ESP_LOGD(TAG, "Modbus error, so removing current command (%02X) from queue", current_command->function_);
-                command_queue_.pop_front();
-            }
         }
 
         /////////////////////////////////////////////////////////////////////////////////////////////
@@ -102,71 +59,122 @@ namespace esphome
             if (enabled_switch_->state == 0)
                 return;
 #endif
-            command_queue_.push_back(make_unique<CenturyPumpCommand>(command));
-        }
+            auto pending = std::make_unique<CenturyPumpCommand>(command);
+            const std::vector<uint8_t> pdu = pending->build_pdu();
 
-        /////////////////////////////////////////////////////////////////////////////////////////////
-        void CenturyVSPump::process_modbus_data_(const CenturyPumpCommand *response)
-{
-    if (response == nullptr)
-    {
-        ESP_LOGW(TAG, "Null response received");
-        return;
-    }
-
-    if (response->payload_.empty())
-    {
-        ESP_LOGW(TAG, "Empty payload for function %02X", response->function_);
-        return;
-    }
-
-    // ESPHome 2026.7's modbus rewrite strips the function-code echo before
-    // calling on_modbus_data() — the first byte is now the pump ACK.
-    const uint8_t ack = response->payload_[0];
-    if (ack != 0x10)
-    {
-        ESP_LOGW(TAG, "Function %02X NACK with %02X, ignoring", response->function_, ack);
-        return;
-    }
-
-    // Drop the ACK byte and pass the rest to the command-specific handler.
-    std::vector<uint8_t> data(response->payload_.begin() + 1, response->payload_.end());
-    response->on_data_func_(this, data);
-}
-        /////////////////////////////////////////////////////////////////////////////////////////////
-        bool CenturyVSPump::send_next_command_()
-        {
-            uint32_t last_send = millis() - this->last_command_timestamp_;
-            if ((last_send > this->command_throttle_) && !waiting_for_response() && !command_queue_.empty())
+            // queue_pdu() returns false only when the request never entered the machine at all
+            // (oversize PDU, full queue, over-cap duplicate) - no callback will follow, so don't track it.
+            if (!this->queue_pdu(pdu))
             {
-                auto &command = command_queue_.front();
-
-                if (command->send_countdown < 1)
-                {
-                    ESP_LOGD(TAG, "Pump command %02X no response received - removed from send queue", command->function_);
-                    command_queue_.pop_front();
-                }
-                else
-                {
-                    ESP_LOGV(TAG, "Sending command with function %02X", command->function_);
-                    command->send();
-                    this->last_command_timestamp_ = millis();
-                }
+                ESP_LOGD(TAG, "Command %02X not accepted by modbus hub, dropping", pending->function_);
+                return;
             }
-            return true;
+
+            ESP_LOGV(TAG, "Queued command with function %02X", pending->function_);
+            this->pending_.push_back(std::move(pending));
         }
 
         /////////////////////////////////////////////////////////////////////////////////////////////
-        bool CenturyPumpCommand::send()
+        /// Match a callback back to the command that produced it. The hub hands us the exact request
+        /// PDU we queued, so compare the whole thing - function code alone is ambiguous, since the
+        /// RPM and demand sensors both send function 0x45 with different page/address payloads.
+        std::vector<std::unique_ptr<CenturyPumpCommand>>::iterator
+        CenturyVSPump::find_pending_(std::span<const uint8_t> request_pdu)
         {
-            std::vector<uint8_t> cmd;
-            cmd.push_back(pump_->get_address());
-            cmd.push_back(function_);
-            cmd.push_back(0x20);
-            cmd.insert(cmd.end(), payload_.begin(), payload_.end());
-            pump_->send_raw(cmd);
-            this->send_countdown--;
-            return true;
+            for (auto it = this->pending_.begin(); it != this->pending_.end(); ++it)
+            {
+                const std::vector<uint8_t> pdu = (*it)->build_pdu();
+                if (pdu.size() == request_pdu.size() && std::equal(pdu.begin(), pdu.end(), request_pdu.begin()))
+                    return it;
+            }
+            return this->pending_.end();
+        }
+
+        /////////////////////////////////////////////////////////////////////////////////////////////
+        /// Every Century function code (0x41-0x45) is in the user-defined range, so all of this pump's
+        /// traffic arrives here. response_pdu is the whole PDU: [function][ACK][data...].
+        void CenturyVSPump::on_custom_response(std::span<const uint8_t> request_pdu,
+                                               std::span<const uint8_t> response_pdu,
+                                               modbus::ResponseStatus status)
+        {
+            auto it = this->find_pending_(request_pdu);
+            if (it == this->pending_.end())
+            {
+                ESP_LOGW(TAG, "Response for an untracked request, ignoring");
+                return;
+            }
+
+            std::unique_ptr<CenturyPumpCommand> command = std::move(*it);
+            this->pending_.erase(it);
+
+            // Modbus-level failure: response_pdu is empty and the exception code is in status.
+            if (!modbus::succeeded(status))
+            {
+                ESP_LOGW(TAG, "Function %02X returned modbus exception %02X", command->function_,
+                         static_cast<uint8_t>(status.value()));
+                return;
+            }
+
+            if (response_pdu.size() < 2)
+            {
+                ESP_LOGW(TAG, "Short response for function %02X, ignoring", command->function_);
+                return;
+            }
+
+            // Application-level ACK from the pump itself (not a modbus exception).
+            if (response_pdu[1] != CENTURY_ACK)
+            {
+                ESP_LOGW(TAG, "Function %02X NACK with %02X, ignoring", command->function_, response_pdu[1]);
+                return;
+            }
+
+            // Drop the function code and ACK byte; hand the rest to the command-specific handler.
+            std::vector<uint8_t> data(response_pdu.begin() + 2, response_pdu.end());
+            command->on_data_func_(this, data);
+        }
+
+        /////////////////////////////////////////////////////////////////////////////////////////////
+        /// No matching reply arrived. Returning true asks the hub to re-queue the same frame; the hub
+        /// does not bound retries, so the countdown here is what stops them.
+        bool CenturyVSPump::on_no_response(std::span<const uint8_t> request_pdu)
+        {
+            auto it = this->find_pending_(request_pdu);
+            if (it == this->pending_.end())
+                return false;
+
+            if ((*it)->send_countdown > 1)
+            {
+                (*it)->send_countdown--;
+                ESP_LOGD(TAG, "Pump command %02X no response - retrying", (*it)->function_);
+                return true;
+            }
+
+            ESP_LOGD(TAG, "Pump command %02X no response received - removed from send queue", (*it)->function_);
+            this->pending_.erase(it);
+            return false;
+        }
+
+        /////////////////////////////////////////////////////////////////////////////////////////////
+        /// Accepted, then dropped before it ever reached the wire.
+        void CenturyVSPump::on_not_sent(std::span<const uint8_t> request_pdu)
+        {
+            auto it = this->find_pending_(request_pdu);
+            if (it == this->pending_.end())
+                return;
+
+            ESP_LOGD(TAG, "Pump command %02X was never sent - removed from send queue", (*it)->function_);
+            this->pending_.erase(it);
+        }
+
+        /////////////////////////////////////////////////////////////////////////////////////////////
+        std::vector<uint8_t> CenturyPumpCommand::build_pdu() const
+        {
+            std::vector<uint8_t> pdu;
+            pdu.reserve(2 + this->payload_.size());
+            pdu.push_back(this->function_);
+            pdu.push_back(CENTURY_REQUEST);
+            pdu.insert(pdu.end(), this->payload_.begin(), this->payload_.end());
+            return pdu;
         }
 
         /////////////////////////////////////////////////////////////////////////////////////////////
