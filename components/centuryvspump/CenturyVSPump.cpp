@@ -154,16 +154,33 @@ namespace esphome
     }
 
     // ESPHome 2026.7's modbus rewrite strips the function-code echo before
-    // calling on_modbus_data() — the first byte is now the pump ACK.
-    const uint8_t ack = response->payload_[0];
+    // calling on_modbus_data() — the first byte is now the pump ACK. Some
+    // older/newer modbus layers may still include the echoed function-code
+    // as the first byte. Be tolerant: if the first byte equals the function
+    // code, use the next byte as the ACK and drop two leading bytes.
+    uint8_t ack = response->payload_[0];
+    size_t data_start = 1;
+    if (ack == response->function_)
+    {
+        if (response->payload_.size() < 2)
+        {
+            ESP_LOGW(TAG, "Function %02X unexpected echo-only payload", response->function_);
+            return;
+        }
+        ack = response->payload_[1];
+        data_start = 2;
+        ESP_LOGD(TAG, "Detected echoed function code for %02X, using next byte as ACK", response->function_);
+    }
+
     if (ack != 0x10)
     {
         ESP_LOGW(TAG, "Function %02X NACK with %02X, ignoring", response->function_, ack);
         return;
     }
 
-    // Drop the ACK byte and pass the rest to the command-specific handler.
-    std::vector<uint8_t> data(response->payload_.begin() + 1, response->payload_.end());
+    // Drop the ACK (and optional echoed function-code) byte(s) and pass the rest
+    // to the command-specific handler.
+    std::vector<uint8_t> data(response->payload_.begin() + data_start, response->payload_.end());
     response->on_data_func_(this, data);
 }
         /////////////////////////////////////////////////////////////////////////////////////////////
