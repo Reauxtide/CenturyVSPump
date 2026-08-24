@@ -93,7 +93,7 @@ namespace esphome
                               public ModbusDevice
         {
         public:
-            CenturyVSPump() {}
+            CenturyVSPump() : last_command_timestamp_(0) {}
 
             uint8_t get_address() const { return this->address_; }
 
@@ -109,6 +109,7 @@ namespace esphome
             /// Registers an item with the controller. Called by esphomes code generator
             void add_item(CenturyPumpItemBase *item) { items_.push_back(item); }
             void queue_command_(const CenturyPumpCommand &cmd);
+            bool has_pending_command_(const CenturyPumpCommand &cmd) const;
 
         protected:
             void process_modbus_data_(const CenturyPumpCommand *response);
@@ -117,7 +118,7 @@ namespace esphome
         private:
             std::list<std::unique_ptr<CenturyPumpCommand>> command_queue_;
             std::queue<std::unique_ptr<CenturyPumpCommand>> response_queue_;
-            uint32_t last_command_timestamp_;
+            uint32_t last_command_timestamp_{0};
             uint16_t command_throttle_{10};
 
         public:

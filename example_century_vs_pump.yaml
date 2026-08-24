@@ -81,16 +81,185 @@ sensor:
     name: Pool Pump Controller Wifi Signal
     update_interval: 60min
   - platform: centuryvspump
-    name: Pool Pump Controller RPM
-    type: rpm
-    unit_of_measurement: RPM
-  - platform: centuryvspump
-    name: Pool Pump Controller Demand
-    address: 3
-    page: 0
-    scale: 4
+    name: "Motor Operating Mode"
     type: custom
-    unit_of_measurement: RPM
+    address: 2
+    page: 0  
+  - platform: centuryvspump
+    name: "Motor Demand"
+    type: custom
+    address: 3
+    page: 0  
+    unit_of_measurement: "rpm"
+    scale: 4
+  - platform: centuryvspump
+    name: "Motor Torque"
+    type: custom
+    address: 4
+    page: 0  
+    unit_of_measurement: "ft-lb"
+  - platform: centuryvspump
+    name: "Input Power"
+    type: custom
+    address: 5
+    page: 0
+    unit_of_measurement: "W"  
+  - platform: centuryvspump
+    name: "DC Bus Voltage"
+    type: custom
+    address: 6
+    page: 0  
+    scale: 64
+  - platform: centuryvspump
+    name: "Ambient Temperature"
+    type: custom
+    address: 7
+    page: 0  
+    scale: 128
+    unit_of_measurement: "°C"
+  - platform: centuryvspump
+    name: "Status"
+    type: custom
+    address: 8
+    page: 0  
+  - platform: centuryvspump
+    name: "Previous Fault"
+    type: custom
+    address: 9
+    page: 0  
+  - platform: centuryvspump
+    name: "Output Power"
+    type: custom
+    address: 0xa
+    page: 0  
+    unit_of_measurement: "W"  
+  - platform: centuryvspump
+    name: "SVRS Bypass Status"
+    type: custom
+    address: 0xb
+    page: 0  
+  - platform: centuryvspump
+    name: "Current Faults"
+    type: custom
+    address: 0xc
+    page: 0  
+  - platform: centuryvspump
+    name: "Motor Line Voltage"
+    type: custom
+    address: 0xd
+    page: 0
+    unit_of_measurement: "V"
+    scale: 10
+  - platform: centuryvspump
+    name: "Ramp Status"
+    type: custom
+    address: 0xe
+    page: 0
+  - platform: centuryvspump
+    name: "Total Faults"
+    type: custom
+    address: 0xf
+    page: 0  
+  - platform: centuryvspump
+    name: "Prime Status"
+    type: custom
+    address: 0x10
+    page: 0  
+  - platform: centuryvspump
+    name: "Motor Input Power"
+    type: custom
+    address: 0x11
+    page: 0  
+  - platform: centuryvspump
+    name: "IGBT Temperature"
+    type: custom
+    address: 0x12
+    page: 0
+    scale: 128
+    unit_of_measurement: "°C"
+  - platform: centuryvspump
+    name: "PCB Temperature"
+    type: custom
+    address: 0x13
+    page: 0
+    scale: 128
+    unit_of_measurement: "°C"
+  - platform: centuryvspump
+    name: "Prime Detection Timer"
+    type: custom
+    address: 2
+    page: 1  
+  - platform: centuryvspump
+    name: "Prime Verify Timer"
+    type: custom
+    address: 3
+    page: 1
+  - platform: centuryvspump
+    name: "SVRS Functionality"
+    type: custom
+    address: 3
+    page: 1
+  - platform: centuryvspump
+    name: "Entrapment Detection"
+    type: custom
+    address: 5
+    page: 1
+  - platform: centuryvspump
+    name: "SVRS Bypass Timer"
+    type: custom
+    address: 6
+    page: 1
+  - platform: centuryvspump
+    name: "Serial Timeout Counter"
+    type: custom
+    address: 7
+    page: 1
+  - platform: centuryvspump
+    name: "Total Run Time Low"
+    type: custom
+    address: 8
+    page: 1
+    unit_of_measurement: Hours
+  - platform: centuryvspump
+    name: "Total Run Time High"
+    type: custom
+    address: 9
+    page: 1
+    unit_of_measurement: Hours
+  - platform: centuryvspump
+    name: "Total Lifetime Low"
+    type: custom
+    address: 0xa
+    page: 1
+    unit_of_measurement: Hours
+  - platform: centuryvspump
+    name: "Total Lifetime High"
+    type: custom
+    address: 0xb
+    page: 1
+    unit_of_measurement: Hours
+  - platform: centuryvspump
+    name: "Total Session Timer Low"
+    type: custom
+    address: 0xd
+    page: 1
+    unit_of_measurement: Hours
+  - platform: centuryvspump
+    name: "Total Session Timer High"
+    type: custom
+    address: 0xd
+    page: 1
+    unit_of_measurement: Hours    
+  - platform: centuryvspump
+    name: "Fault Timer Low"
+    type: custom
+    address: 0xe
+    page: 1
+  - platform: centuryvspump
+    name: "Fault Timer High"
+    type: custom
+    address: 0xf
+    page: 1
 switch:
   - platform: centuryvspump
     name: Pool Pump Controller Run

@@ -63,6 +63,12 @@ namespace esphome
         void CenturyVSPump::on_modbus_data(const std::vector<uint8_t> &data)
         {
             ESP_LOGV(TAG, "Pump got data");
+            if (this->command_queue_.empty())
+            {
+                ESP_LOGW(TAG, "Modbus response received with no pending command");
+                return;
+            }
+
             auto &current_command = this->command_queue_.front();
             if (current_command != nullptr)
             {
@@ -78,6 +84,12 @@ namespace esphome
         void CenturyVSPump::on_modbus_error(uint8_t function_code, uint8_t exception_code)
         {
             ESP_LOGV(TAG, "Received modbus error");
+            if (this->command_queue_.empty())
+            {
+                ESP_LOGW(TAG, "Modbus error received with no pending command");
+                return;
+            }
+
             auto &current_command = this->command_queue_.front();
             if (current_command != nullptr)
             {
@@ -94,6 +106,19 @@ namespace esphome
         }
 
         /////////////////////////////////////////////////////////////////////////////////////////////
+        bool CenturyVSPump::has_pending_command_(const CenturyPumpCommand &command) const
+        {
+            for (const auto &queued_command : command_queue_)
+            {
+                if (queued_command == nullptr)
+                    continue;
+                if (queued_command->function_ == command.function_ && queued_command->payload_ == command.payload_)
+                    return true;
+            }
+            return false;
+        }
+
+        /////////////////////////////////////////////////////////////////////////////////////////////
         void CenturyVSPump::queue_command_(const CenturyPumpCommand &command)
         {
 #ifdef MODBUS_ENABLE_SWITCH
@@ -102,6 +127,14 @@ namespace esphome
             if (enabled_switch_->state == 0)
                 return;
 #endif
+            // The same sensor/status request should not be queued repeatedly while a previous one is
+            // still pending. Re-adding the same custom function/PDU simply keeps the Modbus hub busy
+            // and causes the repeated "Frame already active" rejections seen in logs.
+            if (this->has_pending_command_(command))
+            {
+                ESP_LOGV(TAG, "Skipping duplicate queued command %02X", command.function_);
+                return;
+            }
             command_queue_.push_back(make_unique<CenturyPumpCommand>(command));
         }
 
@@ -197,14 +230,17 @@ namespace esphome
             cmd.payload_.push_back(address);
             cmd.on_data_func_ = [=](CenturyVSPump *pump, const std::vector<uint8_t> data)
             {
-                // Always going to have at least 1 byte of sensor data
-                uint16_t value = (uint16_t)data[2];
-                if (data.size() == 4)
+                if (data.size() < 3)
                 {
-                    // But sometimes, we get two bytes
-                    value |= (uint16_t)data[3] << 8;
+                    ESP_LOGW(TAG, "Sensor response too short for page %d addr %d: %zu bytes", page, address, data.size());
+                    return;
                 }
-                // Scale the value
+
+                uint16_t value = static_cast<uint16_t>(data[2]);
+                if (data.size() >= 4)
+                {
+                    value |= static_cast<uint16_t>(data[3]) << 8;
+                }
                 value /= scale;
                 ESP_LOGD(TAG, "Read value %d from page %d, addr %d", value, page, address);
                 on_value_func(pump, value);
