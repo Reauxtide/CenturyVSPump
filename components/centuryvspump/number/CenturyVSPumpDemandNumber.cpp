@@ -17,9 +17,9 @@ namespace esphome
         void CenturyVSPumpDemandNumber::control(float value)
         {
             ESP_LOGD(TAG, "Set demand to %f", value);
-            pump_->queue_command_(CenturyPumpCommand::create_set_demand_command(pump_, (uint16_t)value, [this](CenturyVSPump *pump)
+            pump_->queue_command_(CenturyPumpCommand::create_set_demand_command(pump_, (uint16_t)value, [this, value](CenturyVSPump *pump)
                                                                                 { this->publish_state(value); }));
-            this->publish_state(state);
+            this->publish_state(value);
             pump_->update();
         }
     }
