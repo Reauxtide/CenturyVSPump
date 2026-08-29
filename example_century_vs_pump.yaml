@@ -130,8 +130,7 @@ button:
           id: pump_demand
           value: 3450
 
-# Optional: onboard RGB LED reflecting pump state.
-# Blue = idle, pulsing white = running.
+# Optional: onboard RGB LED. Remove if your board has no addressable LED.
 light:
   - platform: esp32_rmt_led_strip
     id: status_led
