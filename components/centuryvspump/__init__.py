@@ -16,7 +16,7 @@ MULTI_CONF = True
 # pylint: disable=invalid-name
 century_vs_pump_ns = cg.esphome_ns.namespace("century_vs_pump")
 CenturyVSPump = century_vs_pump_ns.class_(
-    "CenturyVSPump", cg.PollingComponent, modbus.ModbusDevice
+    "CenturyVSPump", cg.PollingComponent, modbus.ModbusClientDevice
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,6 +29,10 @@ CONFIG_SCHEMA = cv.All(
     )
     .extend(cv.polling_component_schema("10s"))
     .extend(modbus.modbus_device_schema(21))
+)
+
+FINAL_VALIDATE_SCHEMA = modbus.final_validate_modbus_device(
+    "centuryvspump", role="client"
 )
 
 CenturyVSPumpItemSchema = cv.Schema(
@@ -54,4 +58,4 @@ async def to_code(config):
 async def register_centuryvspump_device(var, config):
     cg.add(var.set_address(config[CONF_ADDRESS]))
     await cg.register_component(var, config)
-    return await modbus.register_modbus_device(var, config)
+    return await modbus.register_modbus_client_device(var, config)
