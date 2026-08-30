@@ -120,6 +120,12 @@ button:
             id: id_number_rpm
             value: 3450
 ```
+## More sensors
+
+The pump exposes around thirty additional registers — power, temperatures,
+fault counters, run-time totals. See [docs/sensors.md](docs/sensors.md) for the
+map, along with a note on polling budget, since reading many sensors at a short
+`update_interval` will overrun the bus.
 
 # Keywords
 
