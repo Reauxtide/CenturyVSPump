@@ -183,7 +183,7 @@ namespace esphome
             CenturyPumpCommand cmd = {};
             cmd.pump_ = pump;
             cmd.function_ = 0x43; // Pump status
-            cmd.on_data_func_ = [=](CenturyVSPump *pump, const std::vector<uint8_t> data)
+            cmd.on_data_func_ = [on_status_func](CenturyVSPump *pump, const std::vector<uint8_t> data)
             {
                 ESP_LOGD(TAG, "Got status command reply %02X", data[0]);
 
@@ -203,11 +203,18 @@ namespace esphome
             cmd.function_ = 0x45; // Read sensor
             cmd.payload_.push_back(page);
             cmd.payload_.push_back(address);
-            cmd.on_data_func_ = [=](CenturyVSPump *pump, const std::vector<uint8_t> data)
+            cmd.on_data_func_ = [page, address, scale, on_value_func](CenturyVSPump *pump, const std::vector<uint8_t> data)
             {
+                // Guard against short/truncated responses before indexing.
+                if (data.size() < 3)
+                {
+                    ESP_LOGW(TAG, "Sensor response too short for page %d addr %d: %zu bytes", page, address, data.size());
+                    return;
+                }
+
                 // Always going to have at least 1 byte of sensor data
                 uint16_t value = (uint16_t)data[2];
-                if (data.size() == 4)
+                if (data.size() >= 4)
                 {
                     // But sometimes, we get two bytes
                     value |= (uint16_t)data[3] << 8;
@@ -226,7 +233,7 @@ namespace esphome
             CenturyPumpCommand cmd = {};
             cmd.pump_ = pump;
             cmd.function_ = 0x41; // Go
-            cmd.on_data_func_ = [=](CenturyVSPump *pump, const std::vector<uint8_t> data)
+            cmd.on_data_func_ = [on_confirmation_func](CenturyVSPump *pump, const std::vector<uint8_t> data)
             {
                 ESP_LOGD(TAG, "Confirmed pump running");
                 on_confirmation_func(pump);
@@ -240,7 +247,7 @@ namespace esphome
             CenturyPumpCommand cmd = {};
             cmd.pump_ = pump;
             cmd.function_ = 0x42; // Stop
-            cmd.on_data_func_ = [=](CenturyVSPump *pump, const std::vector<uint8_t> data)
+            cmd.on_data_func_ = [on_confirmation_func](CenturyVSPump *pump, const std::vector<uint8_t> data)
             {
                 ESP_LOGD(TAG, "Confirmed pump stopped");
                 on_confirmation_func(pump);
@@ -258,7 +265,7 @@ namespace esphome
             demand *= 4;               // Scaling
             cmd.payload_.push_back(demand & 0xff);
             cmd.payload_.push_back(demand >> 8);
-            cmd.on_data_func_ = [=](CenturyVSPump *pump, const std::vector<uint8_t> data)
+            cmd.on_data_func_ = [on_confirmation_func](CenturyVSPump *pump, const std::vector<uint8_t> data)
             {
                 ESP_LOGD(TAG, "Set demand comfirmed");
                 on_confirmation_func(pump);
